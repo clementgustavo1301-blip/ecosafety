@@ -207,11 +207,11 @@ export function InteractiveHero({
       const gamma = e.gamma || 0;
       const beta = e.beta || 0;
 
-      // Normalize to [-1, 1] range
-      const x = Math.min(Math.max(gamma / 45, -1), 1); 
-      // Offset beta because usually phone is held at ~45 degree angle
-      const betaOffset = beta - 45;
-      const y = Math.min(Math.max(betaOffset / 45, -1), 1);
+      // Aumentando a sensibilidade (20 graus de inclinação = movimento máximo)
+      const x = Math.min(Math.max(gamma / 20, -1), 1); 
+      // Offset de 40 graus (ângulo normal de segurar o celular)
+      const betaOffset = beta - 40;
+      const y = Math.min(Math.max(betaOffset / 20, -1), 1);
       
       mouseX.set(x);
       mouseY.set(y);
