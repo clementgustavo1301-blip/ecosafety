@@ -273,16 +273,6 @@ export function InteractiveHero({
       <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
 
       <div className="container mx-auto px-4 sm:px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
-        {/* MOBILE DEBUG OVERLAY */}
-        {isMobile && isAll && (
-          <div 
-            className="absolute top-0 right-0 p-2 text-[10px] font-mono bg-black/80 text-green-400 z-50 rounded-bl-lg"
-            onClick={needsPermission ? requestGyroPermission : undefined}
-          >
-            {needsPermission ? "Tocar para Permissão Gyro" : gyroDebug}
-          </div>
-        )}
-
         <AnimatePresence mode="wait">
           {isAll ? (
             /* ===== ALL VIEW (HERO INICIAL) ===== */
