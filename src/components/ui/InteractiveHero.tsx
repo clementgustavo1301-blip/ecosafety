@@ -202,16 +202,15 @@ export function InteractiveHero({
     };
 
     const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
-      // gamma: left-to-right tilt in degrees [-90, 90]
-      // beta: front-to-back tilt in degrees [-180, 180]
       const gamma = e.gamma || 0;
       const beta = e.beta || 0;
 
-      // Aumentando a sensibilidade (20 graus de inclinação = movimento máximo)
-      const x = Math.min(Math.max(gamma / 20, -1), 1); 
-      // Offset de 40 graus (ângulo normal de segurar o celular)
-      const betaOffset = beta - 40;
-      const y = Math.min(Math.max(betaOffset / 20, -1), 1);
+      // Dividimos por 30 para que a inclinação seja suave. 
+      // Se inclinar mais de 30 graus, o Framer Motion vai extrapolar o movimento (sem travar)
+      const x = gamma / 30; 
+      // Considerando que o celular fica numa inclinação média de 45 graus
+      const betaOffset = beta - 45;
+      const y = betaOffset / 30;
       
       mouseX.set(x);
       mouseY.set(y);
@@ -220,10 +219,9 @@ export function InteractiveHero({
     if (isAll) {
       if (!isMobile) {
         window.addEventListener("mousemove", handleMouseMove);
-      } else {
-        if (typeof window.DeviceOrientationEvent !== 'undefined') {
-          window.addEventListener("deviceorientation", handleDeviceOrientation);
-        }
+      }
+      if (typeof window.DeviceOrientationEvent !== 'undefined') {
+        window.addEventListener("deviceorientation", handleDeviceOrientation);
       }
     }
 
