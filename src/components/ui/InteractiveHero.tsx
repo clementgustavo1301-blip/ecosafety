@@ -264,6 +264,16 @@ export function InteractiveHero({
               <div
                 className="relative w-[320px] h-[320px] sm:w-[500px] sm:h-[500px] md:w-[700px] md:h-[700px] lg:w-[900px] lg:h-[900px] max-h-[55vh] sm:max-h-[65vh] md:max-h-[75vh] aspect-square flex justify-center items-center -mb-4 sm:-mb-8 md:-mb-14 lg:-mb-20 transform -translate-y-2 sm:-translate-y-4 md:-translate-y-8"
                 onMouseLeave={() => setHoveredPiece(null)}
+                onTouchMove={(e) => {
+                  if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    const { innerWidth, innerHeight } = window;
+                    const x = (touch.clientX / innerWidth - 0.5) * 2;
+                    const y = (touch.clientY / innerHeight - 0.5) * 2;
+                    mouseX.set(x);
+                    mouseY.set(y);
+                  }
+                }}
               >
                 <LogoPiece
                   pieceKey="azul" tab="saude" activeTab={activeTab} setActiveTab={setActiveTab}
