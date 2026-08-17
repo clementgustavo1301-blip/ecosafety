@@ -201,12 +201,37 @@ export function InteractiveHero({
       mouseY.set(y);
     };
 
-    if (isAll && !isMobile) {
-      window.addEventListener("mousemove", handleMouseMove);
+    const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
+      // gamma: left-to-right tilt in degrees [-90, 90]
+      // beta: front-to-back tilt in degrees [-180, 180]
+      const gamma = e.gamma || 0;
+      const beta = e.beta || 0;
+
+      // Normalize to [-1, 1] range
+      const x = Math.min(Math.max(gamma / 45, -1), 1); 
+      // Offset beta because usually phone is held at ~45 degree angle
+      const betaOffset = beta - 45;
+      const y = Math.min(Math.max(betaOffset / 45, -1), 1);
+      
+      mouseX.set(x);
+      mouseY.set(y);
+    };
+
+    if (isAll) {
+      if (!isMobile) {
+        window.addEventListener("mousemove", handleMouseMove);
+      } else {
+        if (typeof window.DeviceOrientationEvent !== 'undefined') {
+          window.addEventListener("deviceorientation", handleDeviceOrientation);
+        }
+      }
     }
 
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
+      if (typeof window.DeviceOrientationEvent !== 'undefined') {
+        window.removeEventListener("deviceorientation", handleDeviceOrientation);
+      }
     };
   }, [isAll, isMobile, mouseX, mouseY]);
 
