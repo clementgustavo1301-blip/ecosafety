@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ecosafety-50: #f0fdf4;
+  --color-ecosafety-100: #dcfce7;
+  --color-ecosafety-200: #bbf7d0;
+  --color-ecosafety-300: #86efac;
+  --color-ecosafety-400: #4ade80;
+  --color-ecosafety-500: #22c55e;
+  --color-ecosafety-600: #16a34a;
+  --color-ecosafety-700: #0f6b43; /* Primary */
+  --color-ecosafety-800: #064027; /* Secondary */
+  --color-ecosafety-900: #14532d;
+  --color-accent: #eab308; /* Gold/Yellow for CTA */
+  --color-background: #f8fafc;
+  --color-foreground: #020617;
+  
+  --font-sans: var(--font-open-sans);
+  --font-display: var(--font-poppins);
+}
+
+:root {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-sm;
+  }
+}
