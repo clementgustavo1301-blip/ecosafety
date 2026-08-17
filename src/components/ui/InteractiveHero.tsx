@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { ArrowRight, ArrowLeft, ChevronDown } from "lucide-react";
 import clsx from "clsx";
 
 import { MobileUnitShowcase } from "./MobileUnitShowcase";
@@ -69,7 +69,7 @@ const svgPaths = {
     detail: "M 383.89 620.39 C391.39,617.45 396.98,615.64 397.56,616.23 C397.84,616.50 396.01,620.95 393.49,626.12 C387.46,638.49 383.45,652.36 381.96,663.43 C383.26,653.29 386.69,640.81 391.19,631.00 C392.83,627.42 394.37,623.43 394.63,622.12 C394.88,620.81 395.18,619.24 395.29,618.62 C395.62,616.83 391.01,617.78 383.89,620.39 ZM 447.39 555.41 C448.61,554.94 449.02,554.38 448.94,550.99 L 449.30 557.00 L 440.90 556.79 C438.29,556.72 434.43,556.63 430.53,556.53 C439.14,556.56 445.46,556.16 447.39,555.41 ZM 298.65 672.98 C313.48,658.22 331.83,645.07 353.14,634.16 C356.88,632.24 361.08,630.24 365.36,628.28 C353.69,633.77 340.89,640.59 331.50,646.75 C319.05,654.92 308.09,663.68 298.65,672.98 ZM 382.84 681.27 C383.70,683.02 384.95,684.00 386.60,684.00 C384.75,684.00 383.62,683.31 382.84,681.27 Z",
     fill: "rgba(34,109,188,1)",
     hitCenter: { cx: 661, cy: 351, r: 180 },
-    depth: 0.8, // For parallax
+    depth: 0.8,
   },
   laranja: {
     main: "M 353.50 880.45 C293.38,870.66 250.00,821.73 250.00,763.72 C250.00,744.01 253.66,728.82 262.96,709.94 C280.12,675.10 313.86,644.53 358.41,623.47 C374.00,616.10 400.07,607.04 405.78,607.01 C409.47,606.99 409.60,609.84 406.22,616.42 C399.93,628.65 395.07,640.11 392.97,647.71 C391.78,652.00 390.40,655.93 389.90,656.45 C389.41,656.97 389.00,659.67 389.01,662.45 L 389.01 667.50 L 393.51 659.63 C399.97,648.31 403.80,643.43 413.44,634.17 C426.82,621.33 442.90,612.02 463.58,605.17 C473.94,601.73 486.60,598.91 488.48,599.63 C489.17,599.90 490.03,602.18 490.37,604.70 C491.40,612.20 491.05,759.48 489.98,772.48 C487.11,807.05 470.36,837.07 442.46,857.63 C416.88,876.48 382.81,885.22 353.50,880.45 ZM 392.50 872.33 C416.92,867.78 442.60,852.31 458.67,832.46 C466.49,822.81 474.49,808.43 477.86,798.00 C483.54,780.42 483.32,784.28 483.72,693.09 C483.93,644.96 483.71,608.31 483.20,607.80 C482.69,607.29 478.78,607.95 473.91,609.36 C433.61,621.09 409.28,640.96 393.23,675.25 C389.66,682.86 388.80,684.00 386.60,684.00 C377.13,684.00 380.97,651.81 393.49,626.12 C396.01,620.95 397.84,616.50 397.56,616.23 C396.26,614.92 370.03,625.51 353.14,634.16 C303.99,659.32 270.56,696.41 259.90,737.60 C257.97,745.06 257.60,749.09 257.58,762.50 C257.57,772.32 258.08,780.82 258.90,784.50 C266.42,818.08 286.72,844.75 317.00,860.80 C340.76,873.41 366.03,877.26 392.50,872.33 Z",
@@ -97,6 +97,8 @@ const labelMap: Record<Exclude<SectionType, "all">, string> = {
   saude: "Saúde & Engenharia",
 };
 
+const sectionKeys: Exclude<SectionType, "all">[] = ["ambiental", "saude", "incendio"];
+
 function LogoPiece({
   pieceKey,
   tab,
@@ -120,7 +122,6 @@ function LogoPiece({
   const isHovered = hoveredPiece === pieceKey;
   const somethingHovered = hoveredPiece !== null;
 
-  // Enhanced mouse parallax for much stronger interactivity
   const xOffset = useTransform(mouseX, [-1, 1], [-45 * piece.depth, 45 * piece.depth]);
   const yOffset = useTransform(mouseY, [-1, 1], [-45 * piece.depth, 45 * piece.depth]);
 
@@ -175,6 +176,14 @@ export function InteractiveHero({
 }) {
   const isAll = activeTab === "all";
   const [hoveredPiece, setHoveredPiece] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Mouse parallax state
   const mouseX = useMotionValue(0);
@@ -192,16 +201,15 @@ export function InteractiveHero({
       mouseY.set(y);
     };
 
-    if (isAll) {
+    if (isAll && !isMobile) {
       window.addEventListener("mousemove", handleMouseMove);
     }
-    
+
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
     };
-  }, [isAll, mouseX, mouseY]);
+  }, [isAll, isMobile, mouseX, mouseY]);
 
-  // Map hovered piece to its tab key
   const hoveredTab = hoveredPiece
     ? Object.entries(pieceMap).find(([, v]) => v === hoveredPiece)?.[0] as Exclude<SectionType, "all">
     : null;
@@ -211,13 +219,13 @@ export function InteractiveHero({
       id="hero"
       className={clsx(
         "relative min-h-[100dvh] w-full flex flex-col bg-white transition-all duration-500",
-        isAll ? "items-center justify-center pt-14 pb-2" : "items-center justify-start pt-20 pb-12"
+        isAll ? "items-center justify-center pt-14 pb-2" : "items-center justify-start pt-20 pb-8 md:pb-12"
       )}
     >
       {/* Subtle texture background */}
       <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
 
-      <div className="container mx-auto px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
+      <div className="container mx-auto px-4 sm:px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
         <AnimatePresence mode="wait">
           {isAll ? (
             /* ===== ALL VIEW (HERO INICIAL) ===== */
@@ -229,36 +237,36 @@ export function InteractiveHero({
               transition={{ duration: 0.25 }}
               className="flex flex-col items-center justify-center w-full max-w-5xl mx-auto"
             >
-              {/* Central Interactive Logo (Increased further, centered to avoid navbar) */}
+              {/* Central Interactive Logo — smaller on mobile to leave room for text/CTAs */}
               <div
-                className="relative w-[500px] h-[500px] sm:w-[700px] sm:h-[700px] md:w-[860px] md:h-[860px] lg:w-[1040px] lg:h-[1040px] max-h-[80vh] aspect-square flex justify-center items-center -mb-6 sm:-mb-10 md:-mb-16 lg:-mb-24 transform -translate-y-3 sm:-translate-y-5 md:-translate-y-8 lg:-translate-y-12"
+                className="relative w-[320px] h-[320px] sm:w-[500px] sm:h-[500px] md:w-[700px] md:h-[700px] lg:w-[900px] lg:h-[900px] max-h-[55vh] sm:max-h-[65vh] md:max-h-[75vh] aspect-square flex justify-center items-center -mb-4 sm:-mb-8 md:-mb-14 lg:-mb-20 transform -translate-y-2 sm:-translate-y-4 md:-translate-y-8"
                 onMouseLeave={() => setHoveredPiece(null)}
               >
-                <LogoPiece 
-                  pieceKey="azul" tab="saude" activeTab={activeTab} setActiveTab={setActiveTab} 
-                  hoveredPiece={hoveredPiece} setHoveredPiece={setHoveredPiece} mouseX={smoothMouseX} mouseY={smoothMouseY} 
+                <LogoPiece
+                  pieceKey="azul" tab="saude" activeTab={activeTab} setActiveTab={setActiveTab}
+                  hoveredPiece={hoveredPiece} setHoveredPiece={setHoveredPiece} mouseX={smoothMouseX} mouseY={smoothMouseY}
                 />
-                <LogoPiece 
-                  pieceKey="laranja" tab="incendio" activeTab={activeTab} setActiveTab={setActiveTab} 
-                  hoveredPiece={hoveredPiece} setHoveredPiece={setHoveredPiece} mouseX={smoothMouseX} mouseY={smoothMouseY} 
+                <LogoPiece
+                  pieceKey="laranja" tab="incendio" activeTab={activeTab} setActiveTab={setActiveTab}
+                  hoveredPiece={hoveredPiece} setHoveredPiece={setHoveredPiece} mouseX={smoothMouseX} mouseY={smoothMouseY}
                 />
-                <LogoPiece 
-                  pieceKey="verde" tab="ambiental" activeTab={activeTab} setActiveTab={setActiveTab} 
-                  hoveredPiece={hoveredPiece} setHoveredPiece={setHoveredPiece} mouseX={smoothMouseX} mouseY={smoothMouseY} 
+                <LogoPiece
+                  pieceKey="verde" tab="ambiental" activeTab={activeTab} setActiveTab={setActiveTab}
+                  hoveredPiece={hoveredPiece} setHoveredPiece={setHoveredPiece} mouseX={smoothMouseX} mouseY={smoothMouseY}
                 />
               </div>
 
               {/* Text Container with dynamic crossfade on hover */}
-              <div className="relative w-full max-w-2xl h-[120px] sm:h-[140px] flex justify-center text-center">
+              <div className="relative w-full max-w-2xl h-[100px] sm:h-[120px] md:h-[140px] flex justify-center text-center px-4">
                 <AnimatePresence mode="wait">
-                  {hoveredTab ? (
+                  {hoveredTab && !isMobile ? (
                     <motion.div
                       key={`hover-${hoveredTab}`}
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                       transition={{ duration: 0.2 }}
-                      className="absolute inset-x-0 top-0 flex flex-col items-center justify-start cursor-pointer"
+                      className="absolute inset-x-0 top-0 flex flex-col items-center justify-start cursor-pointer px-4"
                       onClick={() => setActiveTab(hoveredTab)}
                     >
                       <p className="text-[10px] sm:text-[11px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-1">
@@ -282,7 +290,7 @@ export function InteractiveHero({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                       transition={{ duration: 0.2 }}
-                      className="absolute inset-x-0 top-0 flex flex-col items-center justify-start pointer-events-none"
+                      className="absolute inset-x-0 top-0 flex flex-col items-center justify-start pointer-events-none px-4"
                     >
                       <p className="text-[10px] sm:text-[11px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-2">
                         Soluções Integradas
@@ -295,6 +303,58 @@ export function InteractiveHero({
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* Mobile: Quick-access section cards (since no hover on touch) */}
+              {isMobile && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3, duration: 0.4 }}
+                  className="w-full flex flex-col gap-3 mt-4 px-2"
+                >
+                  <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-400 uppercase text-center mb-1">
+                    Toque para explorar
+                  </p>
+                  {sectionKeys.map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => setActiveTab(key)}
+                      className={clsx(
+                        "flex items-center justify-between w-full min-h-[56px] px-5 py-3.5 rounded-2xl border transition-all duration-200 active:scale-[0.98] text-left",
+                        "bg-white border-slate-200 shadow-sm active:shadow-md"
+                      )}
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className={clsx("text-sm font-semibold", sectionsData[key].accent)}>
+                          {labelMap[key]}
+                        </span>
+                        <span className="text-xs text-zinc-400 font-light line-clamp-1">
+                          {sectionsData[key].description}
+                        </span>
+                      </div>
+                      <ArrowRight size={16} className="text-zinc-300 flex-shrink-0 ml-3" />
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+
+              {/* Scroll indicator on mobile */}
+              {isMobile && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8 }}
+                  className="mt-6 flex flex-col items-center gap-1 text-zinc-300"
+                >
+                  <span className="text-[9px] uppercase tracking-widest font-medium">Rolar</span>
+                  <motion.div
+                    animate={{ y: [0, 6, 0] }}
+                    transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+                  >
+                    <ChevronDown size={18} />
+                  </motion.div>
+                </motion.div>
+              )}
             </motion.div>
           ) : (
             /* ===== ACTIVE VIEW (PÁGINA DO SERVIÇO SELECIONADO) ===== */
@@ -304,21 +364,21 @@ export function InteractiveHero({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-4xl mx-auto flex flex-col pt-4 items-center"
+              className="w-full max-w-4xl mx-auto flex flex-col pt-2 sm:pt-4 items-center"
             >
-              {/* Back Button */}
+              {/* Back Button — large touch target */}
               <button
                 onClick={() => setActiveTab("all")}
-                className="flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-900 transition-colors text-xs md:text-sm font-semibold tracking-wider group py-1 mb-4 w-fit"
+                className="flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-900 transition-colors text-xs md:text-sm font-semibold tracking-wider group py-2 mb-3 sm:mb-4 w-fit min-h-[48px] px-4 rounded-xl active:bg-zinc-100"
               >
                 <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
                 VOLTAR AO INÍCIO
               </button>
 
               {/* Hero Header Area */}
-              <div className="relative w-full flex flex-col items-center lg:items-start pt-4 pb-12">
+              <div className="relative w-full flex flex-col items-center lg:items-start pt-2 sm:pt-4 pb-8 sm:pb-12">
                 {/* Background watermark: large logo piece */}
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[16rem] sm:w-[20rem] lg:w-[26rem] aspect-square opacity-[0.08] pointer-events-none select-none z-0 translate-x-[15%]">
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[12rem] sm:w-[18rem] lg:w-[26rem] aspect-square opacity-[0.06] sm:opacity-[0.08] pointer-events-none select-none z-0 translate-x-[20%] sm:translate-x-[15%]">
                   <motion.svg
                     layoutId={`piece-${pieceMap[activeTab as Exclude<SectionType, "all">]}`}
                     viewBox="0 0 1024 1024"
@@ -331,8 +391,8 @@ export function InteractiveHero({
                       const cx = piece.hitCenter.cx;
                       const cy = piece.hitCenter.cy;
                       const r = piece.hitCenter.r;
-                      const targetScale = 360 / r; 
-                      
+                      const targetScale = 360 / r;
+
                       return (
                         <motion.g
                           initial={{ x: 0, y: 0, scale: 1 }}
@@ -364,25 +424,25 @@ export function InteractiveHero({
                 </div>
 
                 {/* Content on top */}
-                <div className="flex flex-col items-center lg:items-start gap-0 mb-10 w-full relative z-10">
+                <div className="flex flex-col items-center lg:items-start gap-0 mb-6 sm:mb-10 w-full relative z-10">
                   {/* Label + Title */}
                   <div className="flex flex-col items-center lg:items-start text-center lg:text-left max-w-3xl">
-                    <p className={clsx("text-[11px] font-semibold tracking-[0.18em] uppercase mb-3", sectionsData[activeTab as Exclude<SectionType, "all">].accent)}>
+                    <p className={clsx("text-[11px] font-semibold tracking-[0.18em] uppercase mb-2 sm:mb-3", sectionsData[activeTab as Exclude<SectionType, "all">].accent)}>
                       {labelMap[activeTab as Exclude<SectionType, "all">]}
                     </p>
-                    <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-medium tracking-[-0.02em] leading-[1.08] text-slate-900 mb-5">
+                    <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[3.5rem] font-medium tracking-[-0.02em] leading-[1.12] sm:leading-[1.08] text-slate-900 mb-4 sm:mb-5 px-2 sm:px-0">
                       {sectionsData[activeTab as Exclude<SectionType, "all">].title}
                     </h1>
-                    <p className="text-base sm:text-lg text-slate-500 max-w-2xl leading-relaxed font-light mb-8">
+                    <p className="text-sm sm:text-base md:text-lg text-slate-500 max-w-2xl leading-relaxed font-light mb-6 sm:mb-8 px-2 sm:px-0">
                       {sectionsData[activeTab as Exclude<SectionType, "all">].description}
                     </p>
-                    
-                    {/* Dual CTA buttons */}
-                    <div className="flex flex-col sm:flex-row items-center lg:items-start gap-3 sm:gap-4">
+
+                    {/* Dual CTA buttons — stacked on mobile with proper touch targets */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center lg:items-start gap-3 sm:gap-4 w-full sm:w-auto px-2 sm:px-0">
                       <a
                         href="https://wa.me/5584998208584"
                         className={clsx(
-                          "group inline-flex items-center justify-center gap-2.5 px-7 py-3.5 text-sm font-semibold rounded-lg transition-all duration-200 active:scale-[0.98]",
+                          "group inline-flex items-center justify-center gap-2.5 px-7 py-4 sm:py-3.5 text-sm font-semibold rounded-xl sm:rounded-lg transition-all duration-200 active:scale-[0.98] min-h-[52px]",
                           sectionsData[activeTab as Exclude<SectionType, "all">].bgAccent
                         )}
                       >
@@ -391,7 +451,7 @@ export function InteractiveHero({
                       </a>
                       <a
                         href="#contato"
-                        className="inline-flex items-center justify-center gap-2.5 px-7 py-3.5 text-sm font-semibold text-slate-700 border border-slate-300 hover:border-slate-400 hover:bg-slate-50 rounded-lg transition-all duration-200"
+                        className="inline-flex items-center justify-center gap-2.5 px-7 py-4 sm:py-3.5 text-sm font-semibold text-slate-700 border border-slate-300 hover:border-slate-400 hover:bg-slate-50 rounded-xl sm:rounded-lg transition-all duration-200 min-h-[52px]"
                       >
                         Falar com especialista
                       </a>
@@ -402,7 +462,7 @@ export function InteractiveHero({
 
               {/* Service list items or full page sections */}
               {activeTab === "saude" || activeTab === "incendio" ? (
-                <div className="w-screen shrink-0 mt-12">
+                <div className="w-screen shrink-0 mt-6 sm:mt-12">
                   {activeTab === "saude" && <MobileUnitShowcase />}
                   <ProcessTimeline theme={activeTab as ThemeType} data={tabContents[activeTab as Exclude<ThemeType, "ambiental">].howItWorks} />
                   <ProblemSolution theme={activeTab as ThemeType} data={tabContents[activeTab as Exclude<ThemeType, "ambiental">].problemSolution} />
@@ -412,16 +472,16 @@ export function InteractiveHero({
                   <ActionCTA theme={activeTab as ThemeType} data={tabContents[activeTab as Exclude<ThemeType, "ambiental">].cta} />
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8 border-t border-zinc-200 pt-8 w-full text-center">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 md:gap-8 border-t border-zinc-200 pt-6 sm:pt-8 w-full text-center px-2 sm:px-0">
                   {sectionsData[activeTab as Exclude<SectionType, "all">].services.map((item, i) => (
-                    <div key={item.title} className="flex flex-col items-center">
+                    <div key={item.title} className="flex flex-col items-center py-4 sm:py-0">
                       <span className={clsx("text-[10px] font-mono font-medium mb-2 block tracking-wider", sectionsData[activeTab as Exclude<SectionType, "all">].accent)}>
                         0{i + 1}
                       </span>
                       <h3 className="text-base font-medium text-zinc-900 mb-1.5 tracking-tight">
                         {item.title}
                       </h3>
-                      <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed font-light">
+                      <p className="text-sm sm:text-xs md:text-sm text-zinc-500 leading-relaxed font-light max-w-[280px]">
                         {item.text}
                       </p>
                     </div>
