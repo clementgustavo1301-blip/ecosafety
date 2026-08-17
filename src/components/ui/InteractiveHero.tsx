@@ -196,7 +196,8 @@ export function InteractiveHero({
   // Mouse parallax state
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
-  const springConfig = { damping: 30, stiffness: 100, mass: 0.5 };
+  // Deixando o movimento bem mais suave e "líquido" (menos rígido, mais inércia)
+  const springConfig = { damping: 50, stiffness: 60, mass: 1.2 };
   const smoothMouseX = useSpring(mouseX, springConfig);
   const smoothMouseY = useSpring(mouseY, springConfig);
 
@@ -287,7 +288,11 @@ export function InteractiveHero({
               {/* Central Interactive Logo — smaller on mobile to leave room for text/CTAs */}
               <div
                 className="relative w-[320px] h-[320px] sm:w-[500px] sm:h-[500px] md:w-[700px] md:h-[700px] lg:w-[900px] lg:h-[900px] max-h-[55vh] sm:max-h-[65vh] md:max-h-[75vh] aspect-square flex justify-center items-center -mb-4 sm:-mb-8 md:-mb-14 lg:-mb-20 transform -translate-y-2 sm:-translate-y-4 md:-translate-y-8"
-                onMouseLeave={() => setHoveredPiece(null)}
+                onMouseLeave={() => {
+                  setHoveredPiece(null);
+                  mouseX.set(0);
+                  mouseY.set(0);
+                }}
                 onTouchMove={(e) => {
                   if (e.touches.length > 0) {
                     const touch = e.touches[0];
@@ -297,6 +302,10 @@ export function InteractiveHero({
                     mouseX.set(x);
                     mouseY.set(y);
                   }
+                }}
+                onTouchEnd={() => {
+                  mouseX.set(0);
+                  mouseY.set(0);
                 }}
               >
                 <LogoPiece
