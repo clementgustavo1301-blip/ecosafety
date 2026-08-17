@@ -177,11 +177,19 @@ export function InteractiveHero({
   const isAll = activeTab === "all";
   const [hoveredPiece, setHoveredPiece] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [gyroDebug, setGyroDebug] = useState("Giroscópio Inativo");
+  const [needsPermission, setNeedsPermission] = useState(false);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
+    
+    // Check if permission is needed
+    if (typeof (DeviceOrientationEvent as any) !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      setNeedsPermission(true);
+    }
+    
     return () => window.removeEventListener("resize", check);
   }, []);
 
@@ -192,6 +200,37 @@ export function InteractiveHero({
   const smoothMouseX = useSpring(mouseX, springConfig);
   const smoothMouseY = useSpring(mouseY, springConfig);
 
+  const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
+    const gamma = e.gamma || 0;
+    const beta = e.beta || 0;
+    
+    setGyroDebug(`G: ${gamma.toFixed(1)}° | B: ${beta.toFixed(1)}°`);
+
+    const x = gamma / 30; 
+    const betaOffset = beta - 45;
+    const y = betaOffset / 30;
+    
+    mouseX.set(x);
+    mouseY.set(y);
+  };
+
+  const requestGyroPermission = async () => {
+    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      try {
+        const permission = await (DeviceOrientationEvent as any).requestPermission();
+        if (permission === 'granted') {
+          window.addEventListener('deviceorientation', handleDeviceOrientation);
+          setNeedsPermission(false);
+          setGyroDebug("Permissão Concedida");
+        } else {
+          setGyroDebug("Permissão Negada");
+        }
+      } catch (err) {
+        setGyroDebug(`Erro: ${err}`);
+      }
+    }
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const { innerWidth, innerHeight } = window;
@@ -201,26 +240,11 @@ export function InteractiveHero({
       mouseY.set(y);
     };
 
-    const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
-      const gamma = e.gamma || 0;
-      const beta = e.beta || 0;
-
-      // Dividimos por 30 para que a inclinação seja suave. 
-      // Se inclinar mais de 30 graus, o Framer Motion vai extrapolar o movimento (sem travar)
-      const x = gamma / 30; 
-      // Considerando que o celular fica numa inclinação média de 45 graus
-      const betaOffset = beta - 45;
-      const y = betaOffset / 30;
-      
-      mouseX.set(x);
-      mouseY.set(y);
-    };
-
     if (isAll) {
       if (!isMobile) {
         window.addEventListener("mousemove", handleMouseMove);
       }
-      if (typeof window.DeviceOrientationEvent !== 'undefined') {
+      if (typeof window.DeviceOrientationEvent !== 'undefined' && !needsPermission) {
         window.addEventListener("deviceorientation", handleDeviceOrientation);
       }
     }
@@ -231,7 +255,7 @@ export function InteractiveHero({
         window.removeEventListener("deviceorientation", handleDeviceOrientation);
       }
     };
-  }, [isAll, isMobile, mouseX, mouseY]);
+  }, [isAll, isMobile, mouseX, mouseY, needsPermission]);
 
   const hoveredTab = hoveredPiece
     ? Object.entries(pieceMap).find(([, v]) => v === hoveredPiece)?.[0] as Exclude<SectionType, "all">
@@ -249,6 +273,16 @@ export function InteractiveHero({
       <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
 
       <div className="container mx-auto px-4 sm:px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
+        {/* MOBILE DEBUG OVERLAY */}
+        {isMobile && isAll && (
+          <div 
+            className="absolute top-0 right-0 p-2 text-[10px] font-mono bg-black/80 text-green-400 z-50 rounded-bl-lg"
+            onClick={needsPermission ? requestGyroPermission : undefined}
+          >
+            {needsPermission ? "Tocar para Permissão Gyro" : gyroDebug}
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
           {isAll ? (
             /* ===== ALL VIEW (HERO INICIAL) ===== */
