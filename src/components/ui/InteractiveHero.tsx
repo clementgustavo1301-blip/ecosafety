@@ -274,7 +274,7 @@ export function InteractiveHero({
       <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
 
       <div className="container mx-auto px-4 sm:px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="popLayout">
           {isAll ? (
             /* ===== ALL VIEW (HERO INICIAL) ===== */
             <motion.div
