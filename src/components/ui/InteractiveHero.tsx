@@ -32,10 +32,6 @@ import { tabContents, ThemeType } from "@/data/tabContent";
 type SectionType = "all" | "ambiental" | "saude" | "incendio";
 type ActiveSection = Exclude<SectionType, "all">;
 
-interface DeviceOrientationEventWithPermission extends DeviceOrientationEvent {
-  requestPermission?: () => Promise<"granted" | "denied">;
-}
-
 const sectionsData: Record<
   ActiveSection,
   {
@@ -117,12 +113,19 @@ const sectionsData: Record<
 
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const smoothstep = (t: number) => t * t * (3 - 2 * t);
+const cubicInOut = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const segment = (p: number, a: number, b: number) =>
   smoothstep(clamp((p - a) / (b - a)));
 
 const POWER3_IN_OUT = [0.77, 0, 0.175, 1] as const;
 const OPEN_DURATION = 0.95;
 const CLOSE_DURATION = 0.82;
+
+/* Mobile scroll runway ratios (relative to 100svh sticky stage height) */
+const MOBILE_OPEN_SVH_RATIO = 0.62;
+const MOBILE_CLOSE_SVH_RATIO = 0.62;
+const MOBILE_PORTAL_SPLIT = 0.82;
 
 /*
  * SVG path data for each petal in a 1024x1024 coordinate space.
@@ -173,18 +176,26 @@ const labelMap: Record<ActiveSection, string> = {
   saude: "Saúde & Engenharia",
 };
 
-const sectionKeys: ActiveSection[] = ["ambiental", "saude", "incendio"];
+/* Mobile scroll sequence: Azul (Saúde) -> Verde (Ambiental) -> Laranja (Incêndio) */
+const mobileScrollSequence: readonly { tab: ActiveSection; piece: PieceKey }[] = [
+  { tab: "saude", piece: "azul" },
+  { tab: "ambiental", piece: "verde" },
+  { tab: "incendio", piece: "laranja" },
+];
 
 type PortalStage = "opening" | "closing-cover" | "closing";
 
-type PortalState = {
-  item: PieceKey;
-  tab: ActiveSection;
-  stage: PortalStage;
+type PortalGeometry = {
   screenX: number;
   screenY: number;
   baseScale: number;
   F: number;
+};
+
+type PortalState = PortalGeometry & {
+  item: PieceKey;
+  tab: ActiveSection;
+  stage: PortalStage;
 };
 
 type CachedPaths = Record<PieceKey, { solid: Path2D; main: Path2D }>;
@@ -196,7 +207,6 @@ function LogoPiece({
   setHoveredPiece,
   onSelect,
   activePortalPiece,
-  isMobile,
   mouseX,
   mouseY,
 }: {
@@ -206,7 +216,6 @@ function LogoPiece({
   setHoveredPiece: (piece: PieceKey | null) => void;
   onSelect: (tab: ActiveSection) => void;
   activePortalPiece: PieceKey | null;
-  isMobile: boolean;
   mouseX: MotionValue<number>;
   mouseY: MotionValue<number>;
 }) {
@@ -227,8 +236,11 @@ function LogoPiece({
     [-45 * piece.depth, 45 * piece.depth]
   );
 
-  const dimOpacity =
-    isPortalActive || isMobile ? 1 : somethingHovered && !isHovered ? 0.35 : 1;
+  const dimOpacity = isPortalActive
+    ? 1
+    : somethingHovered && !isHovered
+      ? 0.35
+      : 1;
 
   return (
     <g
@@ -247,12 +259,8 @@ function LogoPiece({
             onSelect(tab);
           }
         }}
-        onMouseEnter={() => {
-          if (!isMobile) setHoveredPiece(pieceKey);
-        }}
-        onMouseLeave={() => {
-          if (!isMobile) setHoveredPiece(null);
-        }}
+        onMouseEnter={() => setHoveredPiece(pieceKey)}
+        onMouseLeave={() => setHoveredPiece(null)}
         onFocus={() => setHoveredPiece(pieceKey)}
         onBlur={() => setHoveredPiece(null)}
         style={{
@@ -265,12 +273,11 @@ function LogoPiece({
           style={{
             opacity: dimOpacity,
             filter:
-              isHovered && !isPortalActive && !isMobile
+              isHovered && !isPortalActive
                 ? "drop-shadow(0 6px 16px rgba(0,0,0,0.12))"
                 : "drop-shadow(0 2px 4px rgba(0,0,0,0.03))",
           }}
         >
-          {/* Full petal touch & click target with generous invisible stroke halo */}
           <path
             d={piece.solid}
             fill="rgba(0,0,0,0.001)"
@@ -282,6 +289,148 @@ function LogoPiece({
         </g>
       </motion.g>
     </g>
+  );
+}
+
+function SectionDetailContent({
+  tab,
+  isHeadingH1,
+  isMobileFlow,
+}: {
+  tab: ActiveSection;
+  isHeadingH1: boolean;
+  isMobileFlow: boolean;
+}) {
+  const pieceKey = pieceMap[tab];
+  const piece = svgPaths[pieceKey];
+  const HeadingTag = isHeadingH1 ? "h1" : "h2";
+
+  return (
+    <>
+      {/* Hero Header Area */}
+      <div
+        className={clsx(
+          "relative w-full flex flex-col items-center lg:items-start pt-2 sm:pt-4 pb-8 sm:pb-12",
+          isMobileFlow && "max-w-4xl mx-auto px-4 sm:px-6 overflow-x-hidden"
+        )}
+      >
+        {/* Background watermark */}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[12rem] sm:w-[18rem] lg:w-[24rem] aspect-square opacity-[0.06] sm:opacity-[0.08] pointer-events-none select-none z-0 translate-x-[15%] sm:translate-x-[10%]">
+          <svg
+            viewBox={piece.watermarkViewBox}
+            className="w-full h-full"
+            aria-hidden="true"
+          >
+            <path d={piece.main} fill={piece.fill} />
+          </svg>
+        </div>
+
+        {/* Content on top */}
+        <div className="flex flex-col items-center lg:items-start gap-0 mb-6 sm:mb-10 w-full relative z-10">
+          <div className="flex flex-col items-center lg:items-start text-center lg:text-left max-w-3xl">
+            <p
+              className={clsx(
+                "text-[11px] font-semibold tracking-[0.18em] uppercase mb-2 sm:mb-3",
+                sectionsData[tab].accent
+              )}
+            >
+              {labelMap[tab]}
+            </p>
+            <HeadingTag className="text-2xl sm:text-3xl md:text-4xl lg:text-[3.5rem] font-medium tracking-[-0.02em] leading-[1.12] sm:leading-[1.08] text-slate-900 mb-4 sm:mb-5 px-2 sm:px-0">
+              {sectionsData[tab].title}
+            </HeadingTag>
+            <p className="text-sm sm:text-base md:text-lg text-slate-500 max-w-2xl leading-relaxed font-light mb-6 sm:mb-8 px-2 sm:px-0">
+              {sectionsData[tab].description}
+            </p>
+
+            {/* Dual CTA buttons */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center lg:items-start gap-3 sm:gap-4 w-full sm:w-auto px-2 sm:px-0">
+              <a
+                href="https://wa.me/5584998208584"
+                className={clsx(
+                  "group inline-flex items-center justify-center gap-2.5 px-7 py-4 sm:py-3.5 text-sm font-semibold rounded-xl sm:rounded-lg transition-all duration-200 active:scale-[0.98] min-h-[52px]",
+                  sectionsData[tab].bgAccent
+                )}
+              >
+                Solicitar proposta
+                <ArrowRight
+                  size={16}
+                  className="transition-transform group-hover:translate-x-0.5"
+                />
+              </a>
+              <a
+                href="#contato"
+                className="inline-flex items-center justify-center gap-2.5 px-7 py-4 sm:py-3.5 text-sm font-semibold text-slate-700 border border-slate-300 hover:border-slate-400 hover:bg-slate-50 rounded-xl sm:rounded-lg transition-all duration-200 min-h-[52px]"
+              >
+                Falar com especialista
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Service list items or full page sections */}
+      {tab === "saude" || tab === "incendio" ? (
+        <div
+          className={clsx(
+            "shrink-0 mt-6 sm:mt-12",
+            isMobileFlow ? "w-full" : "w-screen"
+          )}
+        >
+          {tab === "saude" && <MobileUnitShowcase />}
+          <ProcessTimeline
+            theme={tab as ThemeType}
+            data={tabContents[tab].howItWorks}
+          />
+          <ProblemSolution
+            theme={tab as ThemeType}
+            data={tabContents[tab].problemSolution}
+          />
+          <FeatureList
+            theme={tab as ThemeType}
+            data={tabContents[tab].features}
+          />
+          <BenefitList
+            theme={tab as ThemeType}
+            data={tabContents[tab].benefits}
+          />
+          <TargetAudience
+            theme={tab as ThemeType}
+            data={tabContents[tab].target}
+          />
+          <ActionCTA theme={tab as ThemeType} data={tabContents[tab].cta} />
+        </div>
+      ) : (
+        <div
+          className={clsx(
+            "grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 md:gap-8 border-t border-zinc-200 pt-6 sm:pt-8 w-full text-center",
+            isMobileFlow ? "max-w-4xl mx-auto px-6" : "px-2 sm:px-0"
+          )}
+        >
+          {sectionsData[tab].services.map((item, i) => (
+            <div
+              key={item.title}
+              className="flex flex-col items-center py-4 sm:py-0"
+            >
+              <span
+                className={clsx(
+                  "text-[10px] font-mono font-medium mb-2 block tracking-wider",
+                  sectionsData[tab].accent
+                )}
+              >
+                0{i + 1}
+              </span>
+              <h3 className="text-base font-medium text-zinc-900 mb-1.5 tracking-tight">
+                {item.title}
+              </h3>
+              <p className="text-sm sm:text-xs md:text-sm text-zinc-500 leading-relaxed font-light max-w-[280px]">
+                {item.text}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -309,22 +458,35 @@ export function InteractiveHero({
     getServerMobileSnapshot
   );
 
-  const logoContainerRef = useRef<HTMLDivElement>(null);
-  const portalCanvasRef = useRef<HTMLCanvasElement>(null);
-  const pathCacheRef = useRef<CachedPaths | null>(null);
+  // Desktop refs & state
+  const desktopLogoRef = useRef<HTMLDivElement>(null);
   const animControlsRef = useRef<ReturnType<typeof animate> | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const busyRef = useRef(false);
-
   const [portalState, setPortalState] = useState<PortalState | null>(null);
   const [isClosingContent, setIsClosingContent] = useState(false);
+
+  // Shared 2D Canvas refs
+  const portalCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pathCacheRef = useRef<CachedPaths | null>(null);
+
+  // Mobile scroll-driven refs (zero React re-renders during scroll)
+  const heroStickyRef = useRef<HTMLDivElement>(null);
+  const mobileLogoRef = useRef<HTMLDivElement>(null);
+  const mobilePetalRefs = useRef<Record<PieceKey, SVGGElement | null>>({
+    azul: null,
+    verde: null,
+    laranja: null,
+  });
+  const chapterRefs = useRef<(HTMLDivElement | null)[]>([null, null, null]);
+  const mobileCanvasActiveRef = useRef(false);
 
   const setHoveredPiece = useCallback((piece: PieceKey | null) => {
     hoveredPieceRef.current = piece;
     setHoveredPieceState(piece);
   }, []);
 
-  // Mouse & gyroscope parallax state
+  // Desktop mouse parallax
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const springConfig = { damping: 50, stiffness: 60, mass: 1.2 };
@@ -380,26 +542,34 @@ export function InteractiveHero({
     prepared.ctx.clearRect(0, 0, prepared.vw, prepared.vh);
   }, [prepareCanvas]);
 
-  const drawCoverCanvas = useCallback(() => {
-    const prepared = prepareCanvas();
-    if (!prepared) return;
-    prepared.ctx.fillStyle = "#ffffff";
-    prepared.ctx.fillRect(0, 0, prepared.vw, prepared.vh);
-  }, [prepareCanvas]);
+  const drawCoverCanvas = useCallback(
+    (alpha = 1) => {
+      const prepared = prepareCanvas();
+      if (!prepared) return;
+      const { ctx, vw, vh } = prepared;
+      ctx.clearRect(0, 0, vw, vh);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, vw, vh);
+      ctx.restore();
+    },
+    [prepareCanvas]
+  );
 
-  const drawPortalCanvas = useCallback(
-    (state: PortalState, p: number) => {
+  const drawPortalFrame = useCallback(
+    (pieceKey: PieceKey, geom: PortalGeometry, p: number) => {
       const prepared = prepareCanvas();
       if (!prepared) return;
 
       const { ctx, vw, vh } = prepared;
-      const piece = svgPaths[state.item];
-      const paths = getPathCache()[state.item];
-      const scale = state.baseScale * Math.pow(state.F, p);
+      const piece = svgPaths[pieceKey];
+      const paths = getPathCache()[pieceKey];
+      const scale = geom.baseScale * Math.pow(geom.F, p);
 
       ctx.clearRect(0, 0, vw, vh);
       ctx.save();
-      ctx.translate(state.screenX, state.screenY);
+      ctx.translate(geom.screenX, geom.screenY);
       ctx.scale(scale, scale);
       ctx.translate(-piece.pole.cx, -piece.pole.cy);
 
@@ -407,7 +577,7 @@ export function InteractiveHero({
       ctx.fillStyle = "#ffffff";
       ctx.fill(paths.solid);
 
-      const contourAlpha = 1 - segment(p, 0.15, 0.88);
+      const contourAlpha = 1 - segment(p, 0.15, 0.9);
       if (contourAlpha > 0.001) {
         ctx.globalAlpha = contourAlpha;
         ctx.fillStyle = piece.fill;
@@ -419,71 +589,24 @@ export function InteractiveHero({
     [getPathCache, prepareCanvas]
   );
 
-  useEffect(() => {
-    return () => {
-      animControlsRef.current?.stop();
-      if (closeTimerRef.current !== null) {
-        window.clearTimeout(closeTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const { innerWidth, innerHeight } = window;
-      const x = (e.clientX / innerWidth - 0.5) * 2;
-      const y = (e.clientY / innerHeight - 0.5) * 2;
-      mouseX.set(x);
-      mouseY.set(y);
-    };
-
-    const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
-      const gamma = e.gamma || 0;
-      const beta = e.beta || 0;
-      mouseX.set(clamp(gamma / 30, -1, 1));
-      mouseY.set(clamp((beta - 45) / 30, -1, 1));
-    };
-
-    const requiresPermission =
-      typeof DeviceOrientationEvent !== "undefined" &&
-      typeof (
-        DeviceOrientationEvent as unknown as DeviceOrientationEventWithPermission
-      ).requestPermission === "function";
-
-    if (isAll) {
-      if (!isMobile) {
-        window.addEventListener("mousemove", handleMouseMove);
-      }
-      if (
-        typeof window.DeviceOrientationEvent !== "undefined" &&
-        !requiresPermission
-      ) {
-        window.addEventListener("deviceorientation", handleDeviceOrientation);
-      }
-    }
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      if (typeof window.DeviceOrientationEvent !== "undefined") {
-        window.removeEventListener("deviceorientation", handleDeviceOrientation);
-      }
-    };
-  }, [isAll, isMobile, mouseX, mouseY]);
-
   const computePortalGeometry = useCallback(
-    (pieceKey: PieceKey, includeParallax: boolean) => {
+    (
+      pieceKey: PieceKey,
+      logoElement: HTMLDivElement | null,
+      includeParallax: boolean
+    ): PortalGeometry => {
       const piece = svgPaths[pieceKey];
-      const rect = logoContainerRef.current?.getBoundingClientRect();
+      const rect = logoElement?.getBoundingClientRect();
       const canvasRect = portalCanvasRef.current?.getBoundingClientRect();
       const vw = canvasRect?.width || window.innerWidth;
       const vh = canvasRect?.height || window.innerHeight;
+      const canvasLeft = canvasRect?.left ?? 0;
+      const canvasTop = canvasRect?.top ?? 0;
 
       const renderedSize = rect
         ? Math.min(rect.width, rect.height)
         : Math.min(vw * 0.65, 420);
       const scaleLogo = renderedSize / 1024;
-      const canvasLeft = canvasRect?.left ?? 0;
-      const canvasTop = canvasRect?.top ?? 0;
       const svgCenterX = rect
         ? rect.left - canvasLeft + rect.width / 2
         : vw / 2;
@@ -499,17 +622,8 @@ export function InteractiveHero({
         : 0;
 
       const baseScale = scaleLogo;
-      let screenX = svgCenterX + (piece.pole.cx + parallaxX - 512) * baseScale;
-      let screenY = svgCenterY + (piece.pole.cy + parallaxY - 512) * baseScale;
-
-      // If user scrolled the logo completely out of view on a small screen before tapping a card, keep portal origin visible
-      if (
-        includeParallax &&
-        (!rect || rect.bottom < 20 || rect.top > vh - 20)
-      ) {
-        screenX = vw / 2 + (piece.pole.cx - 512) * baseScale;
-        screenY = Math.min(Math.max(vh * 0.32, 120), vh - 120);
-      }
+      const screenX = svgCenterX + (piece.pole.cx + parallaxX - 512) * baseScale;
+      const screenY = svgCenterY + (piece.pole.cy + parallaxY - 512) * baseScale;
 
       const maxDist = Math.max(
         Math.hypot(screenX, screenY),
@@ -525,26 +639,203 @@ export function InteractiveHero({
     [smoothMouseX, smoothMouseY]
   );
 
-  // Paint initial canvas state synchronously before browser paint to avoid any single-frame blink
+  // Clean up desktop timers/animations on unmount
+  useEffect(() => {
+    return () => {
+      animControlsRef.current?.stop();
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Ensure mobile mode always uses the unified scroll flow (`activeTab === "all"`)
+  useEffect(() => {
+    if (!isMobile) return;
+    animControlsRef.current?.stop();
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    busyRef.current = false;
+    if (activeTab !== "all") {
+      setActiveTab("all");
+    }
+  }, [activeTab, isMobile, setActiveTab]);
+
+  // Desktop mouse parallax listener
+  useEffect(() => {
+    if (isMobile || !isAll) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const { innerWidth, innerHeight } = window;
+      mouseX.set((e.clientX / innerWidth - 0.5) * 2);
+      mouseY.set((e.clientY / innerHeight - 0.5) * 2);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [isAll, isMobile, mouseX, mouseY]);
+
+  /* ===== MOBILE CONTINUOUS SCROLL PORTAL ENGINE (ZERO REACT RERENDERS) ===== */
+  const syncMobileScroll = useCallback(() => {
+    const canvas = portalCanvasRef.current;
+    const stickyEl = heroStickyRef.current;
+    if (!canvas || !stickyEl) return;
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const vh = canvasRect.height || window.innerHeight;
+    const svh = stickyEl.offsetHeight || vh;
+    const openDist = Math.max(svh * MOBILE_OPEN_SVH_RATIO, 220);
+    const closeDist = Math.max(svh * MOBILE_CLOSE_SVH_RATIO, 220);
+
+    let activePortalPiece: PieceKey | null = null;
+    let activePortalRawP = 0;
+    let hideHeroStage = false;
+
+    for (let i = 0; i < mobileScrollSequence.length; i++) {
+      const chapterEl = chapterRefs.current[i];
+      if (!chapterEl) continue;
+
+      const { piece } = mobileScrollSequence[i];
+      const rect = chapterEl.getBoundingClientRect();
+
+      let chapterOpacity = 0;
+      let chapterInteractive = false;
+
+      if (rect.top > openDist || rect.bottom < vh - closeDist) {
+        // Completely outside this chapter's scroll window
+        chapterOpacity = 0;
+      } else if (rect.top > 0) {
+        // Opening petal: rect.top glides from `openDist` -> `0`
+        const rawP = clamp(1 - rect.top / openDist, 0, 1);
+        activePortalPiece = piece;
+        activePortalRawP = rawP;
+
+        if (rawP >= MOBILE_PORTAL_SPLIT) {
+          const fadeT = smoothstep(
+            (rawP - MOBILE_PORTAL_SPLIT) / (1 - MOBILE_PORTAL_SPLIT)
+          );
+          chapterOpacity = fadeT;
+          chapterInteractive = fadeT > 0.6;
+          hideHeroStage = true;
+        }
+      } else if (rect.bottom >= vh) {
+        // Fully open inside the petal: native 1:1 DOM scroll through chapter content
+        chapterOpacity = 1;
+        chapterInteractive = true;
+        hideHeroStage = true;
+      } else {
+        // Closing petal: rect.bottom glides from `vh` -> `vh - closeDist`
+        const rawP = clamp(1 - (vh - rect.bottom) / closeDist, 0, 1);
+        activePortalPiece = piece;
+        activePortalRawP = rawP;
+
+        if (rawP >= MOBILE_PORTAL_SPLIT) {
+          const fadeT = smoothstep(
+            (rawP - MOBILE_PORTAL_SPLIT) / (1 - MOBILE_PORTAL_SPLIT)
+          );
+          chapterOpacity = fadeT;
+          chapterInteractive = fadeT > 0.6;
+          hideHeroStage = true;
+        }
+      }
+
+      chapterEl.style.opacity = String(chapterOpacity);
+      chapterEl.style.visibility = chapterOpacity > 0.002 ? "visible" : "hidden";
+      chapterEl.style.pointerEvents = chapterInteractive ? "auto" : "none";
+    }
+
+    // Update sticky Hero stage & individual SVG petals
+    stickyEl.style.opacity = hideHeroStage ? "0" : "1";
+
+    (["azul", "verde", "laranja"] as const).forEach((key) => {
+      const petalEl = mobilePetalRefs.current[key];
+      if (petalEl) {
+        petalEl.style.opacity = activePortalPiece === key ? "0" : "1";
+      }
+    });
+
+    // Paint or hide the hardware-accelerated 2D portal canvas
+    if (activePortalPiece && activePortalRawP > 0.001) {
+      canvas.style.visibility = "visible";
+      mobileCanvasActiveRef.current = true;
+
+      if (activePortalRawP < MOBILE_PORTAL_SPLIT) {
+        const expandP = cubicInOut(activePortalRawP / MOBILE_PORTAL_SPLIT);
+        const geom = computePortalGeometry(
+          activePortalPiece,
+          mobileLogoRef.current,
+          false
+        );
+        drawPortalFrame(activePortalPiece, geom, expandP);
+      } else {
+        const fadeT = smoothstep(
+          (activePortalRawP - MOBILE_PORTAL_SPLIT) / (1 - MOBILE_PORTAL_SPLIT)
+        );
+        const canvasAlpha = 1 - fadeT;
+        if (canvasAlpha > 0.002) {
+          drawCoverCanvas(canvasAlpha);
+        } else {
+          clearPortalCanvas();
+          canvas.style.visibility = "hidden";
+          mobileCanvasActiveRef.current = false;
+        }
+      }
+    } else if (mobileCanvasActiveRef.current || canvas.style.visibility === "visible") {
+      clearPortalCanvas();
+      canvas.style.visibility = "hidden";
+      mobileCanvasActiveRef.current = false;
+    }
+  }, [clearPortalCanvas, computePortalGeometry, drawCoverCanvas, drawPortalFrame]);
+
   useLayoutEffect(() => {
-    if (!portalState) return;
+    if (!isMobile) {
+      if (mobileCanvasActiveRef.current && portalCanvasRef.current) {
+        clearPortalCanvas();
+        portalCanvasRef.current.style.visibility = "";
+        mobileCanvasActiveRef.current = false;
+      }
+      return;
+    }
+
+    syncMobileScroll();
+
+    const onScrollOrResize = () => {
+      syncMobileScroll();
+    };
+
+    window.addEventListener("scroll", onScrollOrResize, { passive: true });
+    window.addEventListener("resize", onScrollOrResize, { passive: true });
+    window.addEventListener("orientationchange", onScrollOrResize);
+
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize);
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("orientationchange", onScrollOrResize);
+    };
+  }, [clearPortalCanvas, isMobile, syncMobileScroll]);
+
+  /* ===== DESKTOP CLICK-DRIVEN PORTAL ENGINE ===== */
+  useLayoutEffect(() => {
+    if (isMobile || !portalState) return;
 
     if (portalState.stage === "closing-cover") {
-      drawCoverCanvas();
+      drawCoverCanvas(1);
     } else if (portalState.stage === "opening") {
-      drawPortalCanvas(portalState, 0);
+      drawPortalFrame(portalState.item, portalState, 0);
     } else if (portalState.stage === "closing") {
-      drawPortalCanvas(portalState, 1);
+      drawPortalFrame(portalState.item, portalState, 1);
     }
-  }, [drawCoverCanvas, drawPortalCanvas, portalState]);
+  }, [drawCoverCanvas, drawPortalFrame, isMobile, portalState]);
 
   const openPortal = useCallback(
     (tab: ActiveSection) => {
-      if (busyRef.current) return;
+      if (isMobile || busyRef.current) return;
       busyRef.current = true;
 
       const pieceKey = pieceMap[tab];
-      const geom = computePortalGeometry(pieceKey, true);
+      const geom = computePortalGeometry(pieceKey, desktopLogoRef.current, true);
 
       const nextState: PortalState = {
         item: pieceKey,
@@ -561,10 +852,10 @@ export function InteractiveHero({
         duration: OPEN_DURATION,
         ease: POWER3_IN_OUT,
         onUpdate: (latest) => {
-          drawPortalCanvas(nextState, latest);
+          drawPortalFrame(pieceKey, geom, latest);
         },
         onComplete: () => {
-          drawPortalCanvas(nextState, 1);
+          drawPortalFrame(pieceKey, geom, 1);
           setHoveredPiece(null);
           mouseX.set(0);
           mouseY.set(0);
@@ -584,7 +875,8 @@ export function InteractiveHero({
     [
       clearPortalCanvas,
       computePortalGeometry,
-      drawPortalCanvas,
+      drawPortalFrame,
+      isMobile,
       mouseX,
       mouseY,
       setActiveTab,
@@ -595,7 +887,7 @@ export function InteractiveHero({
   );
 
   const closePortal = useCallback(() => {
-    if (busyRef.current || activeTab === "all") return;
+    if (isMobile || busyRef.current || activeTab === "all") return;
     busyRef.current = true;
 
     const currentTab = activeTab;
@@ -629,15 +921,30 @@ export function InteractiveHero({
       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
       setActiveTab("all");
     }, 180);
-  }, [activeTab, mouseX, mouseY, setActiveTab, setHoveredPiece, smoothMouseX, smoothMouseY]);
+  }, [
+    activeTab,
+    isMobile,
+    mouseX,
+    mouseY,
+    setActiveTab,
+    setHoveredPiece,
+    smoothMouseX,
+    smoothMouseY,
+  ]);
 
   const portalStage = portalState?.stage;
   const portalItem = portalState?.item;
   const portalTab = portalState?.tab;
 
-  // Once view-all is mounted underneath closing-cover, measure resting coordinates and contract smoothly
+  // Desktop: once view-all is mounted underneath closing-cover, measure resting coordinates and contract smoothly
   useEffect(() => {
-    if (!isAll || portalStage !== "closing-cover" || !portalItem || !portalTab) {
+    if (
+      isMobile ||
+      !isAll ||
+      portalStage !== "closing-cover" ||
+      !portalItem ||
+      !portalTab
+    ) {
       return;
     }
 
@@ -650,7 +957,11 @@ export function InteractiveHero({
         if (cancelled) return;
 
         window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-        const geom = computePortalGeometry(portalItem, false);
+        const geom = computePortalGeometry(
+          portalItem,
+          desktopLogoRef.current,
+          false
+        );
         const closingState: PortalState = {
           item: portalItem,
           tab: portalTab,
@@ -658,7 +969,7 @@ export function InteractiveHero({
           ...geom,
         };
 
-        drawPortalCanvas(closingState, 1);
+        drawPortalFrame(portalItem, geom, 1);
         setPortalState(closingState);
 
         animControlsRef.current?.stop();
@@ -666,7 +977,7 @@ export function InteractiveHero({
           duration: CLOSE_DURATION,
           ease: POWER3_IN_OUT,
           onUpdate: (latest) => {
-            drawPortalCanvas(closingState, latest);
+            drawPortalFrame(portalItem, geom, latest);
           },
           onComplete: () => {
             clearPortalCanvas();
@@ -685,15 +996,17 @@ export function InteractiveHero({
   }, [
     clearPortalCanvas,
     computePortalGeometry,
-    drawPortalCanvas,
+    drawPortalFrame,
     isAll,
+    isMobile,
     portalItem,
     portalStage,
     portalTab,
   ]);
 
-  // Keyboard Escape listener to return to initial Hero
+  // Desktop keyboard Escape listener
   useEffect(() => {
+    if (isMobile) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && activeTab !== "all") {
         closePortal();
@@ -701,7 +1014,7 @@ export function InteractiveHero({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTab, closePortal]);
+  }, [activeTab, closePortal, isMobile]);
 
   const hoveredTab = hoveredPiece
     ? (Object.entries(pieceMap).find(
@@ -713,356 +1026,294 @@ export function InteractiveHero({
     <section
       id="hero"
       className={clsx(
-        "relative min-h-[100dvh] w-full flex flex-col bg-white transition-colors duration-300",
-        isAll
-          ? "items-center justify-center pt-16 pb-4"
-          : "items-center justify-start pt-20 pb-8 md:pb-12"
+        "relative w-full bg-white transition-colors duration-300",
+        isMobile
+          ? "flex flex-col"
+          : clsx(
+              "min-h-[100dvh] flex flex-col",
+              isAll
+                ? "items-center justify-center pt-16 pb-4"
+                : "items-center justify-start pt-20 pb-8 md:pb-12"
+            )
       )}
     >
-      {/* Subtle texture background */}
-      <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
-
-      <div className="container mx-auto px-4 sm:px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
-        {isAll ? (
-          /* ===== ALL VIEW (HERO INICIAL) ===== */
-          <motion.div
-            key="view-all"
-            initial={portalState ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.25 }}
-            className="flex flex-col items-center justify-center w-full max-w-5xl mx-auto"
+      {isMobile ? (
+        /* ===== MOBILE CONTINUOUS SCROLL JOURNEY (AZUL -> VERDE -> LARANJA -> SITE) ===== */
+        <>
+          {/* Sticky 3-Petal Hero Stage pinned throughout the 3-petal scroll journey */}
+          <div
+            ref={heroStickyRef}
+            className="sticky top-0 left-0 w-full h-[100svh] -mb-[100svh] flex flex-col items-center justify-center pt-14 pb-6 px-4 bg-white z-10 pointer-events-none select-none"
           >
-            {/* Central Interactive Logo — unified SVG so touch hit-testing works natively on iOS & Android */}
+            <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
+
             <div
-              ref={logoContainerRef}
-              className="relative w-[min(64vw,32dvh)] sm:w-[min(72vw,54dvh)] md:w-[min(66vw,62dvh)] max-w-[660px] aspect-square flex justify-center items-center -mb-2 sm:-mb-6 md:-mb-10"
-              onMouseLeave={() => {
-                if (!isMobile) {
-                  setHoveredPiece(null);
-                  mouseX.set(0);
-                  mouseY.set(0);
-                }
-              }}
+              ref={mobileLogoRef}
+              className="relative w-[min(68vw,38svh)] max-w-[340px] aspect-square flex justify-center items-center -mb-2"
             >
               <svg
                 viewBox="0 0 1024 1024"
-                className="w-full h-full select-none touch-manipulation overflow-visible"
+                className="w-full h-full overflow-visible"
+                aria-hidden="true"
               >
-                <LogoPiece
-                  pieceKey="azul"
-                  tab="saude"
-                  hoveredPiece={hoveredPiece}
-                  setHoveredPiece={setHoveredPiece}
-                  onSelect={openPortal}
-                  activePortalPiece={portalState?.item ?? null}
-                  isMobile={isMobile}
-                  mouseX={smoothMouseX}
-                  mouseY={smoothMouseY}
-                />
-                <LogoPiece
-                  pieceKey="laranja"
-                  tab="incendio"
-                  hoveredPiece={hoveredPiece}
-                  setHoveredPiece={setHoveredPiece}
-                  onSelect={openPortal}
-                  activePortalPiece={portalState?.item ?? null}
-                  isMobile={isMobile}
-                  mouseX={smoothMouseX}
-                  mouseY={smoothMouseY}
-                />
-                <LogoPiece
-                  pieceKey="verde"
-                  tab="ambiental"
-                  hoveredPiece={hoveredPiece}
-                  setHoveredPiece={setHoveredPiece}
-                  onSelect={openPortal}
-                  activePortalPiece={portalState?.item ?? null}
-                  isMobile={isMobile}
-                  mouseX={smoothMouseX}
-                  mouseY={smoothMouseY}
-                />
+                <g
+                  ref={(el) => {
+                    mobilePetalRefs.current.azul = el;
+                  }}
+                  style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.03))" }}
+                >
+                  <path d={svgPaths.azul.main} fill={svgPaths.azul.fill} />
+                </g>
+                <g
+                  ref={(el) => {
+                    mobilePetalRefs.current.laranja = el;
+                  }}
+                  style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.03))" }}
+                >
+                  <path
+                    d={svgPaths.laranja.main}
+                    fill={svgPaths.laranja.fill}
+                  />
+                </g>
+                <g
+                  ref={(el) => {
+                    mobilePetalRefs.current.verde = el;
+                  }}
+                  style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.03))" }}
+                >
+                  <path d={svgPaths.verde.main} fill={svgPaths.verde.fill} />
+                </g>
               </svg>
             </div>
 
-            {/* Text Container with dynamic crossfade on desktop hover */}
-            <div className="relative w-full max-w-2xl h-auto sm:h-[124px] md:h-[140px] flex justify-center text-center px-4 mb-1 sm:mb-0">
-              <AnimatePresence mode="wait">
-                {hoveredTab && !isMobile ? (
-                  <motion.div
-                    key={`hover-${hoveredTab}`}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.2 }}
-                    className="sm:absolute sm:inset-x-0 sm:top-0 flex flex-col items-center justify-start cursor-pointer px-4"
-                    onClick={() => openPortal(hoveredTab)}
-                  >
-                    <p className="text-[10px] sm:text-[11px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-1">
-                      {labelMap[hoveredTab]}
-                    </p>
-                    <h2
-                      className={clsx(
-                        "text-lg sm:text-xl md:text-2xl font-medium tracking-tight mb-2",
-                        sectionsData[hoveredTab].accent
-                      )}
-                    >
-                      {sectionsData[hoveredTab].title}
-                    </h2>
-                    <p className="text-xs sm:text-sm text-zinc-500 max-w-md leading-relaxed font-light mx-auto mb-3 line-clamp-2">
-                      {sectionsData[hoveredTab].description}
-                    </p>
-                    <span className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5 group underline decoration-zinc-300 underline-offset-4">
-                      Clique para explorar área
-                      <ArrowRight
-                        size={13}
-                        className="transition-transform group-hover:translate-x-1"
-                      />
-                    </span>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="default-text"
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.2 }}
-                    className="sm:absolute sm:inset-x-0 sm:top-0 flex flex-col items-center justify-start pointer-events-none px-4"
-                  >
-                    <p className="text-[10px] sm:text-[11px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-1.5 sm:mb-2">
-                      Soluções Integradas
-                    </p>
-                    <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-medium text-zinc-900 tracking-[-0.03em] leading-[1.12] pb-1">
-                      Operações{" "}
-                      <span className="text-zinc-500 italic font-serif pr-1">
-                        seguras
-                      </span>
-                      ,<br />
-                      resultados sólidos.
-                    </h1>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            <div className="flex flex-col items-center justify-start text-center px-4">
+              <p className="text-[10px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-1.5">
+                Soluções Integradas
+              </p>
+              <h1 className="text-2xl font-medium text-zinc-900 tracking-[-0.03em] leading-[1.12] pb-1">
+                Operações{" "}
+                <span className="text-zinc-500 italic font-serif pr-1">
+                  seguras
+                </span>
+                ,<br />
+                resultados sólidos.
+              </h1>
             </div>
 
-            {/* Mobile: Quick-access section cards */}
-            {isMobile && (
+            <div className="mt-6 flex flex-col items-center gap-1.5 text-zinc-400">
+              <span className="text-[10px] uppercase tracking-[0.18em] font-medium">
+                Role para explorar
+              </span>
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15, duration: 0.35 }}
-                className="w-full flex flex-col gap-2.5 mt-2 px-2"
+                animate={{ y: [0, 6, 0] }}
+                transition={{
+                  repeat: Infinity,
+                  duration: 1.6,
+                  ease: "easeInOut",
+                }}
               >
-                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-400 uppercase text-center mb-0.5">
-                  Toque em uma pétala ou escolha abaixo
-                </p>
-                {sectionKeys.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => openPortal(key)}
-                    className={clsx(
-                      "flex items-center justify-between w-full min-h-[52px] px-4 py-3 rounded-2xl border transition-all duration-200 active:scale-[0.98] text-left touch-manipulation",
-                      "bg-white border-slate-200 shadow-sm active:shadow-md"
-                    )}
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span
-                        className={clsx(
-                          "text-sm font-semibold",
-                          sectionsData[key].accent
-                        )}
-                      >
-                        {labelMap[key]}
-                      </span>
-                      <span className="text-xs text-zinc-400 font-light line-clamp-1">
-                        {sectionsData[key].description}
-                      </span>
-                    </div>
-                    <ArrowRight
-                      size={16}
-                      className="text-zinc-300 flex-shrink-0 ml-3"
-                    />
-                  </button>
-                ))}
+                <ChevronDown size={18} />
               </motion.div>
-            )}
+            </div>
+          </div>
 
-            {/* Scroll indicator on mobile */}
-            {isMobile && (
+          {/* Native-scroll chapters interspersed with portal open/close/rest runways */}
+          <div className="relative z-20 w-full flex flex-col">
+            {/* Initial runway: slight 2svh slack + 62svh Blue petal expansion */}
+            <div
+              className="w-full h-[64svh] pointer-events-none"
+              aria-hidden="true"
+            />
+
+            {mobileScrollSequence.map((entry, idx) => (
+              <div key={entry.tab} className="w-full flex flex-col">
+                <div
+                  ref={(el) => {
+                    chapterRefs.current[idx] = el;
+                  }}
+                  className="w-full min-h-[115svh] bg-white pt-24 pb-20 flex flex-col justify-center opacity-0 invisible pointer-events-none"
+                >
+                  <SectionDetailContent
+                    tab={entry.tab}
+                    isHeadingH1={false}
+                    isMobileFlow={true}
+                  />
+                </div>
+
+                {/* Runway for current petal contraction + centered Hero rest beat + next petal expansion (or exit to Solutions) */}
+                <div
+                  className={clsx(
+                    "w-full pointer-events-none",
+                    idx < mobileScrollSequence.length - 1
+                      ? "h-[70svh]"
+                      : "h-[105svh]"
+                  )}
+                  aria-hidden="true"
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        /* ===== DESKTOP CLICK-DRIVEN EXPERIENCE ===== */
+        <>
+          <div className="absolute inset-0 -z-10 bg-zinc-50/40 pointer-events-none" />
+
+          <div className="container mx-auto px-4 sm:px-6 md:px-12 relative z-10 w-full flex flex-col items-center">
+            {isAll ? (
               <motion.div
-                initial={{ opacity: 0 }}
+                key="view-all"
+                initial={portalState ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="mt-4 flex flex-col items-center gap-1 text-zinc-300"
+                transition={{ duration: 0.25 }}
+                className="flex flex-col items-center justify-center w-full max-w-5xl mx-auto"
               >
-                <span className="text-[9px] uppercase tracking-widest font-medium">
-                  Rolar
-                </span>
-                <motion.div
-                  animate={{ y: [0, 6, 0] }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 1.5,
-                    ease: "easeInOut",
+                <div
+                  ref={desktopLogoRef}
+                  className="relative w-[min(72vw,54dvh)] md:w-[min(66vw,62dvh)] max-w-[660px] aspect-square flex justify-center items-center -mb-6 md:-mb-10"
+                  onMouseLeave={() => {
+                    setHoveredPiece(null);
+                    mouseX.set(0);
+                    mouseY.set(0);
                   }}
                 >
-                  <ChevronDown size={18} />
-                </motion.div>
+                  <svg
+                    viewBox="0 0 1024 1024"
+                    className="w-full h-full select-none overflow-visible"
+                  >
+                    <LogoPiece
+                      pieceKey="azul"
+                      tab="saude"
+                      hoveredPiece={hoveredPiece}
+                      setHoveredPiece={setHoveredPiece}
+                      onSelect={openPortal}
+                      activePortalPiece={portalState?.item ?? null}
+                      mouseX={smoothMouseX}
+                      mouseY={smoothMouseY}
+                    />
+                    <LogoPiece
+                      pieceKey="laranja"
+                      tab="incendio"
+                      hoveredPiece={hoveredPiece}
+                      setHoveredPiece={setHoveredPiece}
+                      onSelect={openPortal}
+                      activePortalPiece={portalState?.item ?? null}
+                      mouseX={smoothMouseX}
+                      mouseY={smoothMouseY}
+                    />
+                    <LogoPiece
+                      pieceKey="verde"
+                      tab="ambiental"
+                      hoveredPiece={hoveredPiece}
+                      setHoveredPiece={setHoveredPiece}
+                      onSelect={openPortal}
+                      activePortalPiece={portalState?.item ?? null}
+                      mouseX={smoothMouseX}
+                      mouseY={smoothMouseY}
+                    />
+                  </svg>
+                </div>
+
+                {/* Text Container with dynamic crossfade on desktop hover */}
+                <div className="relative w-full max-w-2xl h-[124px] md:h-[140px] flex justify-center text-center px-4">
+                  <AnimatePresence mode="wait">
+                    {hoveredTab ? (
+                      <motion.div
+                        key={`hover-${hoveredTab}`}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute inset-x-0 top-0 flex flex-col items-center justify-start cursor-pointer px-4"
+                        onClick={() => openPortal(hoveredTab)}
+                      >
+                        <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-1">
+                          {labelMap[hoveredTab]}
+                        </p>
+                        <h2
+                          className={clsx(
+                            "text-xl md:text-2xl font-medium tracking-tight mb-2",
+                            sectionsData[hoveredTab].accent
+                          )}
+                        >
+                          {sectionsData[hoveredTab].title}
+                        </h2>
+                        <p className="text-sm text-zinc-500 max-w-md leading-relaxed font-light mx-auto mb-3 line-clamp-2">
+                          {sectionsData[hoveredTab].description}
+                        </p>
+                        <span className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5 group underline decoration-zinc-300 underline-offset-4">
+                          Clique para explorar área
+                          <ArrowRight
+                            size={13}
+                            className="transition-transform group-hover:translate-x-1"
+                          />
+                        </span>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="default-text"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute inset-x-0 top-0 flex flex-col items-center justify-start pointer-events-none px-4"
+                      >
+                        <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-400 uppercase mb-2">
+                          Soluções Integradas
+                        </p>
+                        <h1 className="text-2xl md:text-3xl lg:text-4xl font-medium text-zinc-900 tracking-[-0.03em] leading-[1.12] pb-1">
+                          Operações{" "}
+                          <span className="text-zinc-500 italic font-serif pr-1">
+                            seguras
+                          </span>
+                          ,<br />
+                          resultados sólidos.
+                        </h1>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`view-${activeTab}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{
+                  opacity: isClosingContent ? 0 : 1,
+                  y: isClosingContent ? 8 : 0,
+                }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="w-full max-w-4xl mx-auto flex flex-col pt-2 sm:pt-4 items-center"
+              >
+                <button
+                  type="button"
+                  onClick={closePortal}
+                  className="flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-900 transition-colors text-xs md:text-sm font-semibold tracking-wider group py-2 mb-3 sm:mb-4 w-fit min-h-[48px] px-4 rounded-xl active:bg-zinc-100"
+                >
+                  <ArrowLeft
+                    size={16}
+                    className="transition-transform group-hover:-translate-x-1"
+                  />
+                  VOLTAR AO INÍCIO
+                </button>
+
+                <SectionDetailContent
+                  tab={activeTab}
+                  isHeadingH1={true}
+                  isMobileFlow={false}
+                />
               </motion.div>
             )}
-          </motion.div>
-        ) : (
-          /* ===== ACTIVE VIEW (PÁGINA DO SERVIÇO SELECIONADO) ===== */
-          <motion.div
-            key={`view-${activeTab}`}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{
-              opacity: isClosingContent ? 0 : 1,
-              y: isClosingContent ? 8 : 0,
-            }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full max-w-4xl mx-auto flex flex-col pt-2 sm:pt-4 items-center"
-          >
-            {/* Back Button */}
-            <button
-              type="button"
-              onClick={closePortal}
-              className="flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-900 transition-colors text-xs md:text-sm font-semibold tracking-wider group py-2 mb-3 sm:mb-4 w-fit min-h-[48px] px-4 rounded-xl active:bg-zinc-100 touch-manipulation"
-            >
-              <ArrowLeft
-                size={16}
-                className="transition-transform group-hover:-translate-x-1"
-              />
-              VOLTAR AO INÍCIO
-            </button>
-
-            {/* Hero Header Area */}
-            <div className="relative w-full flex flex-col items-center lg:items-start pt-2 sm:pt-4 pb-8 sm:pb-12">
-              {/* Background watermark */}
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[12rem] sm:w-[18rem] lg:w-[24rem] aspect-square opacity-[0.06] sm:opacity-[0.08] pointer-events-none select-none z-0 translate-x-[15%] sm:translate-x-[10%]">
-                {(() => {
-                  const pieceKey = pieceMap[activeTab];
-                  const piece = svgPaths[pieceKey];
-                  return (
-                    <svg
-                      viewBox={piece.watermarkViewBox}
-                      className="w-full h-full"
-                      aria-hidden="true"
-                    >
-                      <path d={piece.main} fill={piece.fill} />
-                    </svg>
-                  );
-                })()}
-              </div>
-
-              {/* Content on top */}
-              <div className="flex flex-col items-center lg:items-start gap-0 mb-6 sm:mb-10 w-full relative z-10">
-                <div className="flex flex-col items-center lg:items-start text-center lg:text-left max-w-3xl">
-                  <p
-                    className={clsx(
-                      "text-[11px] font-semibold tracking-[0.18em] uppercase mb-2 sm:mb-3",
-                      sectionsData[activeTab].accent
-                    )}
-                  >
-                    {labelMap[activeTab]}
-                  </p>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[3.5rem] font-medium tracking-[-0.02em] leading-[1.12] sm:leading-[1.08] text-slate-900 mb-4 sm:mb-5 px-2 sm:px-0">
-                    {sectionsData[activeTab].title}
-                  </h1>
-                  <p className="text-sm sm:text-base md:text-lg text-slate-500 max-w-2xl leading-relaxed font-light mb-6 sm:mb-8 px-2 sm:px-0">
-                    {sectionsData[activeTab].description}
-                  </p>
-
-                  {/* Dual CTA buttons */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center lg:items-start gap-3 sm:gap-4 w-full sm:w-auto px-2 sm:px-0">
-                    <a
-                      href="https://wa.me/5584998208584"
-                      className={clsx(
-                        "group inline-flex items-center justify-center gap-2.5 px-7 py-4 sm:py-3.5 text-sm font-semibold rounded-xl sm:rounded-lg transition-all duration-200 active:scale-[0.98] min-h-[52px]",
-                        sectionsData[activeTab].bgAccent
-                      )}
-                    >
-                      Solicitar proposta
-                      <ArrowRight
-                        size={16}
-                        className="transition-transform group-hover:translate-x-0.5"
-                      />
-                    </a>
-                    <a
-                      href="#contato"
-                      className="inline-flex items-center justify-center gap-2.5 px-7 py-4 sm:py-3.5 text-sm font-semibold text-slate-700 border border-slate-300 hover:border-slate-400 hover:bg-slate-50 rounded-xl sm:rounded-lg transition-all duration-200 min-h-[52px]"
-                    >
-                      Falar com especialista
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Service list items or full page sections */}
-            {activeTab === "saude" || activeTab === "incendio" ? (
-              <div className="w-screen shrink-0 mt-6 sm:mt-12">
-                {activeTab === "saude" && <MobileUnitShowcase />}
-                <ProcessTimeline
-                  theme={activeTab as ThemeType}
-                  data={tabContents[activeTab].howItWorks}
-                />
-                <ProblemSolution
-                  theme={activeTab as ThemeType}
-                  data={tabContents[activeTab].problemSolution}
-                />
-                <FeatureList
-                  theme={activeTab as ThemeType}
-                  data={tabContents[activeTab].features}
-                />
-                <BenefitList
-                  theme={activeTab as ThemeType}
-                  data={tabContents[activeTab].benefits}
-                />
-                <TargetAudience
-                  theme={activeTab as ThemeType}
-                  data={tabContents[activeTab].target}
-                />
-                <ActionCTA
-                  theme={activeTab as ThemeType}
-                  data={tabContents[activeTab].cta}
-                />
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 md:gap-8 border-t border-zinc-200 pt-6 sm:pt-8 w-full text-center px-2 sm:px-0">
-                {sectionsData[activeTab].services.map((item, i) => (
-                  <div
-                    key={item.title}
-                    className="flex flex-col items-center py-4 sm:py-0"
-                  >
-                    <span
-                      className={clsx(
-                        "text-[10px] font-mono font-medium mb-2 block tracking-wider",
-                        sectionsData[activeTab].accent
-                      )}
-                    >
-                      0{i + 1}
-                    </span>
-                    <h3 className="text-base font-medium text-zinc-900 mb-1.5 tracking-tight">
-                      {item.title}
-                    </h3>
-                    <p className="text-sm sm:text-xs md:text-sm text-zinc-500 leading-relaxed font-light max-w-[280px]">
-                      {item.text}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </div>
+          </div>
+        </>
+      )}
 
       {/* ===== HARDWARE-ACCELERATED 2D CANVAS PORTAL OVERLAY (60/120FPS ON MOBILE & DESKTOP) ===== */}
       <canvas
         ref={portalCanvasRef}
         className={clsx(
           "fixed inset-0 w-full h-full pointer-events-none z-40",
-          !portalState && "invisible"
+          (isMobile || !portalState) && "invisible"
         )}
         aria-hidden="true"
       />
